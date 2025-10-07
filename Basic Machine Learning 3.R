@@ -11,6 +11,8 @@ library(caret)
 library(dslabs)
 library(ggplot2)
 library(reshape2)
+library(corrplot)
+#install.packages("corrplot")
 
 # Load BRCA dataset
 data(brca)
@@ -117,6 +119,22 @@ for (i in 1:10) {
 }
 cat("PCs with non-overlapping IQRs between tumor types:", paste(non_overlapping_pcs, collapse = ", "), "\n")
 
+############ Correlation 
+base <- brca$x
+corre <- cor(base)
+
+cor_matrix <- cor(corre, use = "complete.obs")
+corrplot(cor_matrix, method = "square")
+
+cutoff <- 0.9
+high_cor <- findCorrelation(cor_matrix, cutoff = cutoff, names = TRUE)
+
+cat("\nVariables removed due to high correlation (>", cutoff, "):\n", sep = "")
+high_cor
+brca <- as.data.frame(brca)
+
+brca <- brca[, !(names(brca) %in% high_cor)]
+brca$y
 ##### Train/test split #####
 
 set.seed(1)
@@ -136,15 +154,22 @@ train_df$Tumor <- train_y
 
 model <- glm(Tumor ~ ., data = train_df, family = "binomial")
 
+# train
+train_probs <- predict(model, newdata = train_df, type = "response")
+train_predictions <- ifelse(train_probs > 0.5, "M", "B")
+train_predictions <- factor(train_predictions, levels = levels(train_y))
+
+logistic_accuracy_train <- mean(train_predictions == train_y)
+cat("Logistic Regression train accuracy:", logistic_accuracy_train, "\n")
+
+#  test
 test_df <- data.frame(test_x)
+test_probs <- predict(model, newdata = test_df, type = "response")
+test_predictions <- ifelse(test_probs > 0.5, "M", "B")
+test_predictions <- factor(test_predictions, levels = levels(test_y))
 
-probs <- predict(model, newdata = test_df, type = "response")
-
-predictions <- ifelse(probs > 0.5, "M", "B")
-predictions <- factor(predictions, levels = levels(test_y))
-
-logistic_accuracy <- mean(predictions == test_y)
-cat("Logistic Regression accuracy:", logistic_accuracy, "\n")
+logistic_accuracy_test <- mean(test_predictions == test_y)
+cat("Logistic Regression test accuracy:", logistic_accuracy_test, "\n")
 
 ##### Loess Model #####
 
@@ -164,6 +189,10 @@ train_knn <- train(train_x, train_y,
 best_k <- train_knn$bestTune$k
 cat("Best k for kNN:", best_k, "\n")
 
+knn_preds_train <- predict(train_knn, train_x)
+knn_accuracy <- mean(knn_preds_train == train_y)
+cat("kNN model accuracy:", knn_accuracy, "\n")
+
 knn_preds <- predict(train_knn, test_x)
 knn_accuracy <- mean(knn_preds == test_y)
 cat("kNN model accuracy:", knn_accuracy, "\n")
@@ -178,6 +207,13 @@ train_rf <- train(train_x, train_y,
                   importance = TRUE)
 best_mtry <- train_rf$bestTune$mtry
 cat("Best mtry for Random Forest:", best_mtry, "\n")
+
+rf_preds_train <- predict(train_rf, train_x)
+rf_accuracy <- mean(rf_preds_train == train_y)
+cat("Random Forest accuracy:", rf_accuracy, "\n")
+
+# Variable importance plot train 
+varImp(train_rf)
 
 rf_preds <- predict(train_rf, test_x)
 rf_accuracy <- mean(rf_preds == test_y)
